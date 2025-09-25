@@ -71,10 +71,13 @@ const eWasteBins: EWasteBin[] = [
 
 export function MapComponent({ onClose }: MapComponentProps) {
   const [selectedBin, setSelectedBin] = useState<EWasteBin | null>(null);
-  const [userLocation] = useState({ lat: -37.8136, lng: 144.9631 }); // Melbourne CBD
+  const [userLocation, setUserLocation] = useState({ lat: -37.8136, lng: 144.9631 }); // Default to Melbourne CBD
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
+  const userMarkerRef = useRef<L.Marker | null>(null);
 
   // Custom icons for different marker types
   const createCustomIcon = (color: string) => {
@@ -123,8 +126,54 @@ export function MapComponent({ onClose }: MapComponentProps) {
     iconAnchor: [8, 8],
   });
 
+  // Get user's real location
   useEffect(() => {
-    if (!mapRef.current) return;
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported by this browser');
+      setIsLoadingLocation(false);
+      return;
+    }
+
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 300000 // 5 minutes
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setUserLocation({ lat: latitude, lng: longitude });
+        setLocationError(null);
+        setIsLoadingLocation(false);
+        console.log('Got user location:', latitude, longitude);
+      },
+      (error) => {
+        console.error('Geolocation error:', error);
+        let errorMessage = 'Unable to get your location';
+        
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = 'Location access denied. Using default location.';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = 'Location information unavailable. Using default location.';
+            break;
+          case error.TIMEOUT:
+            errorMessage = 'Location request timed out. Using default location.';
+            break;
+        }
+        
+        setLocationError(errorMessage);
+        setIsLoadingLocation(false);
+        // Keep the default Melbourne CBD location
+      },
+      options
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!mapRef.current || isLoadingLocation) return;
 
     // Initialize the map
     const map = L.map(mapRef.current).setView([userLocation.lat, userLocation.lng], 13);
@@ -137,10 +186,15 @@ export function MapComponent({ onClose }: MapComponentProps) {
     }).addTo(map);
 
     // Add user location marker
-    L.marker([userLocation.lat, userLocation.lng], { icon: userIcon })
+    const userMarker = L.marker([userLocation.lat, userLocation.lng], { icon: userIcon })
       .addTo(map)
-      .bindPopup('Your Location')
-      .openPopup();
+      .bindPopup(locationError ? 'Default Location (Melbourne CBD)' : 'Your Location');
+    
+    userMarkerRef.current = userMarker;
+    
+    if (!locationError) {
+      userMarker.openPopup();
+    }
 
     // Add e-waste bin markers
     eWasteBins.forEach((bin) => {
@@ -175,12 +229,17 @@ export function MapComponent({ onClose }: MapComponentProps) {
         mapInstanceRef.current = null;
       }
       markersRef.current = [];
+      userMarkerRef.current = null;
     };
-  }, [userLocation.lat, userLocation.lng]);
+  }, [userLocation.lat, userLocation.lng, isLoadingLocation]);
 
   const centerOnUser = () => {
     if (mapInstanceRef.current) {
       mapInstanceRef.current.setView([userLocation.lat, userLocation.lng], 15);
+      // Show popup on user marker when centering
+      if (userMarkerRef.current) {
+        userMarkerRef.current.openPopup();
+      }
     }
   };
 
@@ -188,9 +247,17 @@ export function MapComponent({ onClose }: MapComponentProps) {
     <div className="fixed inset-0 z-50 bg-white">
       <div className="h-full flex flex-col">
         {/* Header */}
-        <div className="bg-green-600 text-white p-4">
+        <div className="bg-green-600 text-white p-4 relative z-20">
           <div className="flex justify-between items-center">
-            <h2 className="text-lg">E-Waste Collection Map</h2>
+            <div>
+              <h2 className="text-lg">E-Waste Collection Map</h2>
+              {isLoadingLocation && (
+                <p className="text-green-100 text-sm">Getting your location...</p>
+              )}
+              {locationError && (
+                <p className="text-green-100 text-sm">{locationError}</p>
+              )}
+            </div>
             <Button
               variant="ghost"
               size="sm"
@@ -204,6 +271,14 @@ export function MapComponent({ onClose }: MapComponentProps) {
 
         {/* Map Area */}
         <div className="flex-1 relative">
+          {isLoadingLocation && (
+            <div className="absolute inset-0 bg-gray-100 flex items-center justify-center z-10">
+              <div className="text-center">
+                <Navigation className="w-8 h-8 text-green-600 mx-auto mb-2 animate-spin" />
+                <p className="text-gray-600">Loading map and getting your location...</p>
+              </div>
+            </div>
+          )}
           <div 
             ref={mapRef} 
             className="w-full h-full"
@@ -228,7 +303,7 @@ export function MapComponent({ onClose }: MapComponentProps) {
 
         {/* Location Details Modal */}
         {selectedBin && (
-          <div className="absolute inset-0 bg-black/50 flex items-end">
+          <div className="absolute inset-x-0 bottom-0 top-16 bg-black/50 flex items-end z-10">
             <Card className="w-full m-4 max-h-80 overflow-y-auto">
               <CardHeader className="pb-3">
                 <div className="flex justify-between items-start">
