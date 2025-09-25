@@ -151,15 +151,78 @@ export function CameraComponent({ onClose, onPhotoTaken }: CameraComponentProps)
     fileInputRef.current?.click();
   }, []);
 
-  const simulateQRScan = useCallback(() => {
+  const scanQRCode = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current || !stream || !videoReady) {
+      toast.error('Camera not ready for QR scanning');
+      return;
+    }
+
     setIsScanning(true);
-    // Simulate QR code detection after 2 seconds
-    setTimeout(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+    
+    if (!context) {
       setIsScanning(false);
-      const mockQRData = `EWASTE_BIN_${Math.floor(Math.random() * 1000)}`;
-      toast.success(`QR Code detected: ${mockQRData}`);
-    }, 2000);
-  }, []);
+      toast.error('Unable to scan QR code');
+      return;
+    }
+
+    // Set up scanning interval
+    const scanInterval = setInterval(async () => {
+      if (!videoRef.current || !videoReady) {
+        clearInterval(scanInterval);
+        setIsScanning(false);
+        return;
+      }
+
+      const currentVideo = videoRef.current;
+      
+      // Check if video has valid dimensions
+      if (currentVideo.videoWidth === 0 || currentVideo.videoHeight === 0) {
+        return;
+      }
+
+      // Set canvas size to match video
+      canvas.width = currentVideo.videoWidth;
+      canvas.height = currentVideo.videoHeight;
+      
+      // Draw current video frame to canvas
+      context.drawImage(currentVideo, 0, 0, canvas.width, canvas.height);
+      
+      // Get image data from canvas
+      const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+      
+      try {
+        // Import jsQR dynamically
+        const jsQR = (await import('jsqr')).default;
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
+        
+        if (code) {
+          clearInterval(scanInterval);
+          setIsScanning(false);
+          toast.success(`QR Code detected: ${code.data}`);
+          console.log('QR Code found:', code.data);
+          // You can add additional handling of the QR code data here
+        }
+      } catch (error) {
+        console.error('QR scanning error:', error);
+        clearInterval(scanInterval);
+        setIsScanning(false);
+        toast.error('QR scanning failed');
+      }
+    }, 100); // Scan every 100ms
+
+    // Stop scanning after 10 seconds if no QR code is found
+    setTimeout(() => {
+      clearInterval(scanInterval);
+      if (isScanning) {
+        setIsScanning(false);
+        toast.info('QR scan timeout - no QR code detected');
+      }
+    }, 10000);
+
+  }, [stream, videoReady, isScanning]);
 
   const handleVideoReady = useCallback(() => {
     setVideoReady(true);
@@ -512,7 +575,7 @@ export function CameraComponent({ onClose, onPhotoTaken }: CameraComponentProps)
         <div className="absolute bottom-0 left-0 right-0 bg-black/50 p-6">
           <div className="flex justify-center items-center space-x-8">
             <Button
-              onClick={simulateQRScan}
+              onClick={scanQRCode}
               disabled={isScanning || !stream || !videoReady}
               className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 rounded-full w-16 h-16"
             >
