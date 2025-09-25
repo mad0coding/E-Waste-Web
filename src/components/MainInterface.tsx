@@ -22,6 +22,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
   const [currentView, setCurrentView] = useState<'main' | 'camera' | 'map' | 'search'>('main');
   const [points, setPoints] = useState(150); // Starting points
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [binId, setBinId] = useState<string>(''); // BIN ID from QR code
 
   const handlePhotoTaken = (photoData: string) => {
     const newPhoto: Photo = {
@@ -34,6 +35,13 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
     setCurrentView('main');
   };
 
+  const handleQRScanned = (qrData: string) => {
+    // For now, just set the BIN ID to the scanned data
+    // In the future, this can include validation logic
+    setBinId(qrData);
+    toast.success(`BIN ID set to: ${qrData}`);
+  };
+
   const formatUserName = (email: string) => {
     return email.split('@')[0].charAt(0).toUpperCase() + email.split('@')[0].slice(1);
   };
@@ -43,6 +51,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
       <CameraComponent
         onClose={() => setCurrentView('main')}
         onPhotoTaken={handlePhotoTaken}
+        onQRScanned={handleQRScanned}
       />
     );
   }
@@ -66,7 +75,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
             </div>
             <div>
               <h1 className="text-lg">Welcome, {formatUserName(userEmail)}</h1>
-              <p className="text-green-100 text-sm">Ready to make a difference!</p>
+              <p className="text-green-100 text-sm">BIN ID: {binId || 'Not set'}</p>
             </div>
           </div>
           <Button

@@ -7,9 +7,10 @@ import { toast } from "sonner@2.0.3";
 interface CameraComponentProps {
   onClose: () => void;
   onPhotoTaken: (photoData: string) => void;
+  onQRScanned: (qrData: string) => void;
 }
 
-export function CameraComponent({ onClose, onPhotoTaken }: CameraComponentProps) {
+export function CameraComponent({ onClose, onPhotoTaken, onQRScanned }: CameraComponentProps) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
@@ -203,7 +204,8 @@ export function CameraComponent({ onClose, onPhotoTaken }: CameraComponentProps)
           setIsScanning(false);
           toast.success(`QR Code detected: ${code.data}`);
           console.log('QR Code found:', code.data);
-          // You can add additional handling of the QR code data here
+          // Call the callback to update the BIN ID
+          onQRScanned(code.data);
         }
       } catch (error) {
         console.error('QR scanning error:', error);
