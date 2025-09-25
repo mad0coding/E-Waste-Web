@@ -14,11 +14,19 @@ export function CameraComponent({ onClose, onPhotoTaken }: CameraComponentProps)
   const [isScanning, setIsScanning] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const startCamera = useCallback(async () => {
+  const retryCamera = useCallback(async () => {
+    // Stop existing stream first
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+      setVideoReady(false);
+    }
+    
     try {
       setCameraError(null);
       setHasPermission(null);
@@ -53,6 +61,7 @@ export function CameraComponent({ onClose, onPhotoTaken }: CameraComponentProps)
 
       setStream(mediaStream);
       setHasPermission(true);
+      setVideoReady(false);
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
       }
@@ -77,34 +86,53 @@ export function CameraComponent({ onClose, onPhotoTaken }: CameraComponentProps)
       
       toast.error(errorMessage);
     }
-  }, []);
+  }, [stream]);
 
   const stopCamera = useCallback(() => {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
       setStream(null);
+      setVideoReady(false);
     }
   }, [stream]);
 
   const takePhoto = useCallback(() => {
-    if (videoRef.current && canvasRef.current && stream) {
+    if (videoRef.current && canvasRef.current && stream && videoReady) {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
       
+      // Check if video has valid dimensions
+      if (video.videoWidth === 0 || video.videoHeight === 0) {
+        toast.error('Camera not ready. Please wait a moment and try again.');
+        return;
+      }
+      
       if (context) {
+        // Set canvas dimensions to match video
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
-        context.drawImage(video, 0, 0);
         
-        const photoData = canvas.toDataURL('image/jpeg', 0.8);
-        onPhotoTaken(photoData);
-        toast.success('Photo captured successfully!');
+        // Draw the video frame to canvas
+        context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+        
+        // Convert to image data
+        const photoData = canvas.toDataURL('image/jpeg', 0.9);
+        
+        // Verify we got valid image data
+        if (photoData && photoData.length > 100) {
+          onPhotoTaken(photoData);
+          toast.success('Photo captured successfully!');
+        } else {
+          toast.error('Failed to capture photo. Please try again.');
+        }
       }
     } else if (!stream) {
       toast.error('Camera not available. Please enable camera access.');
+    } else if (!videoReady) {
+      toast.error('Camera is starting up. Please wait a moment.');
     }
-  }, [onPhotoTaken, stream]);
+  }, [onPhotoTaken, stream, videoReady]);
 
   const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -133,10 +161,176 @@ export function CameraComponent({ onClose, onPhotoTaken }: CameraComponentProps)
     }, 2000);
   }, []);
 
+  const handleVideoReady = useCallback(() => {
+    setVideoReady(true);
+  }, []);
+
+  const handleVideoError = useCallback(() => {
+    setVideoReady(false);
+    toast.error('Video stream error. Please try again.');
+  }, []);
+
+  // 1) init camera
   useEffect(() => {
-    startCamera();
-    return () => stopCamera();
-  }, [startCamera, stopCamera]);
+    let isMounted = true;
+
+    const initCamera = async () => {
+      try {
+        setCameraError(null);
+        setHasPermission(null);
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('Camera API not supported in this browser');
+        }
+
+        const preferredConstraints = {
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        };
+
+        let mediaStream;
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia(preferredConstraints);
+        } catch (err) {
+          // fallback to any camera
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          });
+        }
+
+        if (!isMounted) {
+          // the component has been unloaded, release the stream immediately
+          mediaStream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        console.log('[Camera] got stream', mediaStream);
+        setStream(mediaStream); // only set stream, attach & play is handled in effect below
+        setHasPermission(true);
+        setVideoReady(false);
+      } catch (error: any) {
+        console.error('Error accessing camera:', error);
+        setHasPermission(false);
+
+        let errorMessage = 'Unable to access camera';
+        if (error?.name === 'NotAllowedError') {
+          errorMessage = 'Camera permission denied. Please allow camera access and try again.';
+          setCameraError('permission');
+        } else if (error?.name === 'NotFoundError') {
+          errorMessage = 'No camera found on this device.';
+          setCameraError('no-camera');
+        } else if (error?.name === 'NotSupportedError') {
+          errorMessage = 'Camera not supported in this browser.';
+          setCameraError('not-supported');
+        } else {
+          errorMessage = error?.message || 'Camera access failed';
+          setCameraError('generic');
+        }
+
+        toast.error(errorMessage);
+      }
+    };
+
+    initCamera();
+
+    return () => {
+      isMounted = false;
+      // do not stop stream here, the effect below will handle this when stream changes
+    };
+  }, []); // run only once (first load)
+
+  // 2) attach stream -> video & robust play
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!stream) {
+      return;
+    }
+    if (!video) {
+      // wait until video is ready (through next effect or render)
+      console.log('[Camera] stream available but videoRef null — will attach when available');
+    }
+
+    let cancelled = false;
+    let checkInterval: number | undefined;
+
+    const attachAndPlay = async () => {
+      const v = videoRef.current;
+      if (!v) return;
+
+      // attach srcObject safely
+      try {
+        if (v.srcObject !== stream) {
+          v.srcObject = stream;
+        }
+      } catch (e) {
+        console.warn('[Camera] failed to set srcObject', e);
+      }
+
+      // ensure muted to satisfy autoplay policies
+      try {
+        v.muted = true;
+        v.playsInline = true;
+      } catch (e) { /* ignore */ }
+
+      // Try to play, with retries (some browsers need a short delay)
+      let attempts = 0;
+      const maxAttempts = 6;
+
+      const tryPlay = async () => {
+        attempts++;
+        try {
+          const p = v.play();
+          if (p !== undefined) {
+            await p;
+          }
+          if (!cancelled) {
+            console.log('[Camera] video.play() succeeded');
+            setVideoReady(true);
+          }
+        } catch (err) {
+          console.warn('[Camera] video.play() failed, attempt', attempts, err);
+          if (!cancelled && attempts < maxAttempts) {
+            // small backoff then retry
+            setTimeout(tryPlay, 300 + attempts * 100);
+          }
+        }
+      };
+
+      tryPlay();
+
+      // Fallback: if videoWidth becomes > 0 (stream decoded) mark ready
+      checkInterval = window.setInterval(() => {
+        const cur = videoRef.current;
+        if (cur && cur.videoWidth > 0 && !cancelled) {
+          console.log('[Camera] video has dimensions', cur.videoWidth, cur.videoHeight);
+          setVideoReady(true);
+          if (checkInterval) {
+            clearInterval(checkInterval);
+            checkInterval = undefined;
+          }
+        }
+      }, 200);
+    };
+
+    // Try attach immediately
+    attachAndPlay();
+
+    return () => {
+      cancelled = true;
+      if (checkInterval) {
+        clearInterval(checkInterval);
+      }
+      // Stop the camera
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+        console.log("[Camera] stopped all tracks");
+      }
+    };
+  }, [stream]); // When stream changes
+
 
   // Show error screen if camera access failed
   if (hasPermission === false && cameraError) {
@@ -174,7 +368,7 @@ export function CameraComponent({ onClose, onPhotoTaken }: CameraComponentProps)
                       To take photos and scan QR codes, please allow camera access in your browser.
                     </p>
                     <div className="space-y-2">
-                      <Button onClick={startCamera} className="w-full">
+                      <Button onClick={retryCamera} className="w-full">
                         <Settings className="w-4 h-4 mr-2" />
                         Try Again
                       </Button>
@@ -225,7 +419,7 @@ export function CameraComponent({ onClose, onPhotoTaken }: CameraComponentProps)
                       Unable to access camera. Please try again or upload a photo.
                     </p>
                     <div className="space-y-2">
-                      <Button onClick={startCamera} className="w-full">
+                      <Button onClick={retryCamera} className="w-full">
                         Try Again
                       </Button>
                       <Button onClick={triggerFileUpload} variant="outline" className="w-full">
@@ -272,13 +466,26 @@ export function CameraComponent({ onClose, onPhotoTaken }: CameraComponentProps)
         {/* Video Stream */}
         <div className="flex-1 relative">
           {stream ? (
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className="w-full h-full object-cover"
-            />
+            <>
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                onLoadedMetadata={handleVideoReady}
+                onCanPlay={handleVideoReady}
+                onError={handleVideoError}
+                className="w-full h-full object-cover"
+              />
+              {!videoReady && (
+                <div className="absolute inset-0 bg-gray-900 flex items-center justify-center">
+                  <div className="text-white text-center">
+                    <Camera className="w-12 h-12 mx-auto mb-4 opacity-50 animate-pulse" />
+                    <p>Loading camera...</p>
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
             <div className="w-full h-full bg-gray-900 flex items-center justify-center">
               <div className="text-white text-center">
@@ -306,7 +513,7 @@ export function CameraComponent({ onClose, onPhotoTaken }: CameraComponentProps)
           <div className="flex justify-center items-center space-x-8">
             <Button
               onClick={simulateQRScan}
-              disabled={isScanning || !stream}
+              disabled={isScanning || !stream || !videoReady}
               className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 rounded-full w-16 h-16"
             >
               <QrCode className="w-6 h-6" />
@@ -314,7 +521,7 @@ export function CameraComponent({ onClose, onPhotoTaken }: CameraComponentProps)
             
             <Button
               onClick={takePhoto}
-              disabled={!stream}
+              disabled={!stream || !videoReady}
               className="bg-white hover:bg-gray-200 disabled:bg-gray-400 text-black rounded-full w-20 h-20"
             >
               <Camera className="w-8 h-8" />
@@ -329,7 +536,8 @@ export function CameraComponent({ onClose, onPhotoTaken }: CameraComponentProps)
           </div>
           
           <p className="text-white text-center mt-4 text-sm">
-            {stream ? 'Tap camera to take photo • Tap QR to scan codes' : 'Upload photo from gallery'}
+            {stream && videoReady ? 'Tap camera to take photo • Tap QR to scan codes' : 
+             stream ? 'Camera loading...' : 'Upload photo from gallery'}
           </p>
         </div>
 
