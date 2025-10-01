@@ -202,10 +202,20 @@ export function CameraComponent({ onClose, onPhotoTaken, onQRScanned }: CameraCo
         if (code) {
           clearInterval(scanInterval);
           setIsScanning(false);
-          toast.success(`QR Code detected: ${code.data}`);
-          console.log('QR Code found:', code.data);
-          // Call the callback to update the BIN ID
-          onQRScanned(code.data);
+          let scannedStr = code.data; // get the string
+          // toast.success(`QR Code detected: ${scannedStr}`);
+          console.log('QR Code found:', scannedStr);
+          if(scannedStr.startsWith("Bin")){ // check prefix
+            scannedStr = scannedStr.substring(3); // remove prefix
+            // Call the callback to update the BIN ID
+            onQRScanned(scannedStr);
+            // Close camera
+            stopCamera();
+            onClose();
+          }
+          else{
+            toast.info('Not a BIN ID, please try again');
+          }
         }
       } catch (error) {
         console.error('QR scanning error:', error);
@@ -216,12 +226,12 @@ export function CameraComponent({ onClose, onPhotoTaken, onQRScanned }: CameraCo
     }, 100); // Scan every 100ms
 
     // Stop scanning after 10 seconds if no QR code is found
-    setTimeout(() => {
-      clearInterval(scanInterval);
-      if (isScanning) {
-        setIsScanning(false);
-        toast.info('QR scan timeout - no QR code detected');
-      }
+    setTimeout(() => { // do nothing for now
+      // clearInterval(scanInterval);
+      // if (isScanning) {
+      //   setIsScanning(false);
+      //   toast.info('QR scan timeout - no QR code detected');
+      // }
     }, 10000);
 
   }, [stream, videoReady, isScanning]);
