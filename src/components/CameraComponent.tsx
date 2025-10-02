@@ -6,7 +6,7 @@ import { toast } from "sonner@2.0.3";
 
 interface CameraComponentProps {
   onClose: () => void;
-  onPhotoTaken: (photoData: string) => void;
+  onPhotoTaken: (photoBlob: Blob) => void;
   onQRScanned: (qrData: string) => void;
 }
 
@@ -117,16 +117,15 @@ export function CameraComponent({ onClose, onPhotoTaken, onQRScanned }: CameraCo
         // Draw the video frame to canvas
         context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
         
-        // Convert to image data
-        const photoData = canvas.toDataURL('image/jpeg', 0.9);
-        
-        // Verify we got valid image data
-        if (photoData && photoData.length > 100) {
-          onPhotoTaken(photoData);
-          toast.success('Photo captured successfully!');
-        } else {
-          toast.error('Failed to capture photo. Please try again.');
-        }
+        // Convert canvas to blob
+        canvas.toBlob((blob) => {
+          if (blob) {
+            onPhotoTaken(blob);
+            toast.success('Photo captured successfully!');
+          } else {
+            toast.error('Failed to capture photo. Please try again.');
+          }
+        }, 'image/jpeg', 0.9);
       }
     } else if (!stream) {
       toast.error('Camera not available. Please enable camera access.');
@@ -138,13 +137,8 @@ export function CameraComponent({ onClose, onPhotoTaken, onQRScanned }: CameraCo
   const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const photoData = e.target?.result as string;
-        onPhotoTaken(photoData);
-        toast.success('Photo uploaded successfully!');
-      };
-      reader.readAsDataURL(file);
+      onPhotoTaken(file);
+      toast.success('Photo uploaded successfully!');
     }
   }, [onPhotoTaken]);
 
@@ -206,8 +200,7 @@ export function CameraComponent({ onClose, onPhotoTaken, onQRScanned }: CameraCo
           // toast.success(`QR Code detected: ${scannedStr}`);
           console.log('QR Code found:', scannedStr);
           if(scannedStr.startsWith("Bin")){ // check prefix
-            scannedStr = scannedStr.substring(3); // remove prefix
-            // Call the callback to update the BIN ID
+            // Call the callback with the full BIN ID (including "Bin" prefix)
             onQRScanned(scannedStr);
             // Close camera
             stopCamera();

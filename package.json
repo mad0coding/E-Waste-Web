@@ -54,8 +54,14 @@
           "@vitejs/plugin-react-swc": "^3.10.2",
           "vite": "6.3.5"
       },
+      "workspaces": [
+          "src",
+          "src/server"
+      ],
       "scripts": {
           "dev": "vite",
-          "build": "vite build"
+          "build": "vite build",
+          "server": "cd src/server && npm run dev",
+          "start:all": "concurrently \"npm run server\" \"npm run dev\""
       }
   }

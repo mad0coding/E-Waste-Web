@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Camera, Map, Search, User, Award, Recycle, LogOut, Image } from 'lucide-react';
@@ -6,45 +6,103 @@ import { CameraComponent } from './CameraComponent';
 import { MapComponent } from './MapComponent';
 import { SearchComponent } from './SearchComponent';
 import { toast } from "sonner@2.0.3";
+import { apiClient, UserData, PhotoInfo } from '../utils/api';
 
 interface MainInterfaceProps {
   userEmail: string;
   onLogout: () => void;
 }
 
-interface Photo {
-  id: string;
-  data: string;
-  timestamp: Date;
-}
-
 export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
   const [currentView, setCurrentView] = useState<'main' | 'camera' | 'map' | 'search'>('main');
-  const [points, setPoints] = useState(150); // Starting points
-  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [photos, setPhotos] = useState<PhotoInfo[]>([]);
   const [binId, setBinId] = useState<string>(''); // BIN ID from QR code
+  const [isLoading, setIsLoading] = useState(true);
 
-  const handlePhotoTaken = (photoData: string) => {
-    const newPhoto: Photo = {
-      id: Date.now().toString(),
-      data: photoData,
-      timestamp: new Date(),
-    };
-    setPhotos(prev => [newPhoto, ...prev]);
-    setPoints(prev => prev + 25); // Award points for taking photos
-    setCurrentView('main');
+  // Load user data on component mount
+  useEffect(() => {
+    loadUserData();
+    loadPhotos();
+  }, [userEmail]);
+
+  const loadUserData = async () => {
+    try {
+      const data = await apiClient.getUserData(userEmail);
+      setUserData(data);
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Failed to load user data:', error);
+      toast.error('Failed to load profile data');
+      setIsLoading(false);
+    }
   };
 
-  const handleQRScanned = (qrData: string) => {
-    // For now, just set the BIN ID to the scanned data
-    // In the future, this can include validation logic
-    setBinId(qrData);
-    toast.success(`BIN ID set to: ${qrData}`);
+  const loadPhotos = async () => {
+    try {
+      const photosData = await apiClient.getPhotos(userEmail);
+      setPhotos(photosData.photos);
+    } catch (error) {
+      console.error('Failed to load photos:', error);
+    }
+  };
+
+  const handlePhotoTaken = async (photoBlob: Blob) => {
+    try {
+      const response = await apiClient.uploadPhoto(userEmail, photoBlob, binId || undefined);
+      
+      if (response.success) {
+        toast.success('Photo saved successfully!');
+        // Reload user data and photos to get updated points
+        await loadUserData();
+        await loadPhotos();
+        setCurrentView('main');
+      }
+    } catch (error) {
+      console.error('Failed to upload photo:', error);
+      toast.error('Failed to save photo');
+    }
+  };
+
+  const handleQRScanned = async (qrData: string) => {
+    if (!qrData.startsWith('Bin')) {
+      toast.error('Invalid BIN ID. Must start with "Bin"');
+      return;
+    }
+
+    try {
+      const response = await apiClient.scanBin(userEmail, qrData);
+      
+      if (response.success) {
+        setBinId(qrData);
+        toast.success(`BIN scanned! +10 points. Total: ${response.points}`);
+        // Reload user data to get updated points
+        await loadUserData();
+      }
+    } catch (error) {
+      console.error('Failed to scan BIN:', error);
+      if (error instanceof Error && error.message.includes('already scanned')) {
+        toast.error('This BIN has already been scanned');
+      } else {
+        toast.error('Failed to scan BIN');
+      }
+    }
   };
 
   const formatUserName = (email: string) => {
     return email.split('@')[0].charAt(0).toUpperCase() + email.split('@')[0].slice(1);
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+          <p>Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (currentView === 'camera') {
     return (
@@ -63,6 +121,9 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
   if (currentView === 'search') {
     return <SearchComponent onClose={() => setCurrentView('main')} />;
   }
+
+  const points = userData?.points || 0;
+  const scannedBinsCount = userData?.scannedBins?.length || 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -97,7 +158,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
               <div>
                 <p className="text-green-100 text-sm">Your Points</p>
                 <h2 className="text-3xl font-bold">{points}</h2>
-                <p className="text-green-100 text-xs">+25 for each e-waste item</p>
+                <p className="text-green-100 text-xs">+10 per BIN scan, photos archived</p>
               </div>
               <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center">
                 <Award className="w-8 h-8" />
@@ -145,15 +206,20 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
           </h3>
           <div className="grid grid-cols-3 gap-2">
             {photos.slice(0, 6).map((photo) => (
-              <div key={photo.id} className="aspect-square relative">
+              <div key={photo.filename} className="aspect-square relative">
                 <img
-                  src={photo.data}
+                  src={apiClient.getPhotoUrl(userEmail, photo.filename)}
                   alt="E-waste photo"
                   className="w-full h-full object-cover rounded-lg"
                 />
                 <div className="absolute bottom-1 right-1 bg-green-600 text-white text-xs px-1 rounded">
-                  +25
+                  📷
                 </div>
+                {photo.binId && (
+                  <div className="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1 rounded">
+                    {photo.binId}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -171,8 +237,8 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
           <Card>
             <CardContent className="p-3 text-center">
               <Recycle className="w-6 h-6 text-green-600 mx-auto mb-1" />
-              <p className="text-2xl font-bold">{Math.floor(points / 25)}</p>
-              <p className="text-xs text-muted-foreground">Items Recycled</p>
+              <p className="text-2xl font-bold">{scannedBinsCount}</p>
+              <p className="text-xs text-muted-foreground">BINs Scanned</p>
             </CardContent>
           </Card>
           
