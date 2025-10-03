@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:3001/api';
+const API_BASE_URL = `${window.location.origin.replace('3000','3001')}/api`;
 
 export interface UserData {
   email: string;

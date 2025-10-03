@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const fs = require('fs').promises;
+const fsSync = require('fs');
+const https = require('https');
 const path = require('path');
 const multer = require('multer');
 
@@ -14,7 +16,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Ensure allData directory exists
-const DATA_DIR = path.join(__dirname, '..', 'allData');
+const DATA_DIR = path.join(__dirname, '../..', 'allData/userData');
 
 async function ensureDataDir() {
   try {
@@ -272,8 +274,14 @@ async function startServer() {
   try {
     await ensureDataDir();
     
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`E-waste backend server running on port ${PORT}`);
+    // get the certification
+    const options = {
+      key: fsSync.readFileSync('../../localhost-key.pem'),
+      cert: fsSync.readFileSync('../../localhost-cert.pem')
+    };
+    // start HTTPS server
+    https.createServer(options, app).listen(PORT, "0.0.0.0", () => {
+      console.log(`HTTPS backend running at https://0.0.0.0:${PORT}`);
       console.log(`Data directory: ${DATA_DIR}`);
     });
   } catch (error) {
