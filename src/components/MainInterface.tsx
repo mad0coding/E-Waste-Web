@@ -5,6 +5,7 @@ import { Camera, Map, Search, User, Award, Recycle, LogOut, Image } from 'lucide
 import { CameraComponent } from './CameraComponent';
 import { MapComponent } from './MapComponent';
 import { SearchComponent } from './SearchComponent';
+import { IdentificationPopup } from './IdentificationPopup';
 import { toast } from "sonner@2.0.3";
 import { apiClient, UserData, PhotoInfo } from '../utils/api';
 
@@ -19,12 +20,23 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
   const [photos, setPhotos] = useState<PhotoInfo[]>([]);
   const [binId, setBinId] = useState<string>(''); // BIN ID from QR code
   const [isLoading, setIsLoading] = useState(true);
+  const [identificationPopup, setIdentificationPopup] = useState<{
+    open: boolean;
+    result: string | null;
+    photoInfo: any;
+  }>({ open: false, result: null, photoInfo: null });
+  const [isConfirming, setIsConfirming] = useState(false);
 
   // Load user data on component mount
   useEffect(() => {
     loadUserData();
     loadPhotos();
   }, [userEmail]);
+
+  // Debug: Log popup state changes
+  useEffect(() => {
+    console.log('Identification popup state changed:', identificationPopup);
+  }, [identificationPopup]);
 
   const loadUserData = async () => {
     try {
@@ -50,13 +62,21 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
   const handlePhotoTaken = async (photoBlob: Blob) => {
     try {
       const response = await apiClient.uploadPhoto(userEmail, photoBlob, binId || undefined);
+      console.log('Photo upload response:', response);
       
       if (response.success) {
-        toast.success('Photo saved successfully!');
-        // Reload user data and photos to get updated points
-        await loadUserData();
-        await loadPhotos();
         setCurrentView('main');
+        
+        // Show identification popup
+        console.log('Setting identification popup with result:', response.identificationResult);
+        console.log('Photo info:', response.photoInfo);
+        const popupState = {
+          open: true,
+          result: response.identificationResult || null,
+          photoInfo: response.photoInfo || null
+        };
+        console.log('Setting popup state:', popupState);
+        setIdentificationPopup(popupState);
       }
     } catch (error) {
       console.error('Failed to upload photo:', error);
@@ -86,6 +106,50 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
       } else {
         toast.error('Failed to scan BIN');
       }
+    }
+  };
+
+  const handleConfirmPhoto = async () => {
+    if (!identificationPopup.photoInfo) {
+      console.error('No photo info available for confirmation');
+      return;
+    }
+    
+    console.log('Confirming photo with info:', identificationPopup.photoInfo);
+    setIsConfirming(true);
+    try {
+      const result = await apiClient.confirmPhoto(userEmail, identificationPopup.photoInfo.filename, identificationPopup.photoInfo);
+      console.log('Photo confirmation result:', result);
+      toast.success('Photo saved successfully!');
+      
+      // Reload user data and photos
+      await loadUserData();
+      await loadPhotos();
+      
+      setIdentificationPopup({ open: false, result: null, photoInfo: null });
+    } catch (error) {
+      console.error('Failed to confirm photo:', error);
+      toast.error('Failed to save photo');
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
+  const handleCancelPhoto = async () => {
+    if (!identificationPopup.photoInfo) {
+      console.error('No photo info available for cancellation');
+      return;
+    }
+    
+    console.log('Cancelling photo:', identificationPopup.photoInfo.filename);
+    try {
+      const result = await apiClient.cancelPhoto(userEmail, identificationPopup.photoInfo.filename);
+      console.log('Photo cancellation result:', result);
+      toast.info('Photo deleted');
+      setIdentificationPopup({ open: false, result: null, photoInfo: null });
+    } catch (error) {
+      console.error('Failed to cancel photo:', error);
+      toast.error('Failed to delete photo');
     }
   };
 
@@ -271,6 +335,15 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Identification Popup */}
+      <IdentificationPopup
+        open={identificationPopup.open}
+        identificationResult={identificationPopup.result}
+        onConfirm={handleConfirmPhoto}
+        onCancel={handleCancelPhoto}
+        isLoading={isConfirming}
+      />
     </div>
   );
 }

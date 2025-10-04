@@ -25,6 +25,14 @@ export interface PhotoUploadResponse {
   success: boolean;
   filename: string;
   photoCount: number;
+  identificationResult?: string;
+  photoInfo?: {
+    filename: string;
+    binId: string | null;
+    timestamp: string;
+    size: number;
+    identificationResult?: string;
+  };
 }
 
 export interface PhotoInfo {
@@ -32,6 +40,7 @@ export interface PhotoInfo {
   binId: string | null;
   timestamp: string;
   size: number;
+  identificationResult?: string;
 }
 
 export interface PhotosResponse {
@@ -104,6 +113,19 @@ class ApiClient {
 
   getPhotoUrl(email: string, filename: string): string {
     return `${API_BASE_URL}/user/${encodeURIComponent(email)}/photos/${filename}`;
+  }
+
+  async confirmPhoto(email: string, filename: string, photoInfo: any): Promise<{ success: boolean; photoCount: number }> {
+    return this.request<{ success: boolean; photoCount: number }>(`/user/${encodeURIComponent(email)}/photos/${filename}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ photoInfo }),
+    });
+  }
+
+  async cancelPhoto(email: string, filename: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/user/${encodeURIComponent(email)}/photos/${filename}/cancel`, {
+      method: 'DELETE',
+    });
   }
 
   async healthCheck(): Promise<{ status: string; timestamp: string }> {

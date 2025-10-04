@@ -6,9 +6,13 @@ const fsSync = require('fs');
 const https = require('https');
 const path = require('path');
 const multer = require('multer');
+const { spawn } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Python script process
+let pythonProcess = null;
 
 // Middleware
 app.use(cors());
@@ -97,6 +101,77 @@ async function saveUserInfo(email, userInfo) {
   userInfo.lastUpdatedAt = new Date().toISOString();
   await fs.writeFile(userInfoPath, JSON.stringify(userInfo, null, 2));
   return userInfo;
+}
+
+// Initialize Python script
+function initPythonScript() {
+  try {
+    const pythonScriptPath = path.join(__dirname, '../../py_path/image_identify.py');
+    
+    console.log('Starting Python script:', pythonScriptPath);
+    pythonProcess = spawn('python', [pythonScriptPath]);
+    
+    pythonProcess.stderr.on('data', (data) => {
+      console.error('Python error:', data.toString().trim());
+    });
+    
+    pythonProcess.on('close', (code) => {
+      console.log(`Python script exited with code ${code}`);
+      pythonProcess = null;
+    });
+    
+    pythonProcess.on('error', (error) => {
+      console.error('Failed to start Python script:', error);
+      pythonProcess = null;
+    });
+    
+    console.log('Python script initialized successfully');
+  } catch (error) {
+    console.error('Error initializing Python script:', error);
+  }
+}
+
+// Send image path to Python script and get identification result
+function identifyImage(imagePath) {
+  return new Promise((resolve, reject) => {
+    if (!pythonProcess) {
+      reject(new Error('Python script not initialized'));
+      return;
+    }
+    
+    console.log('Sending image path to Python:', imagePath);
+    
+    const timeout = setTimeout(() => {
+      reject(new Error('Image identification timeout (5 seconds)'));
+    }, 5000);
+    
+    // Buffer to collect data
+    let responseBuffer = '';
+    
+    // Listen for response
+    const onData = (data) => {
+      responseBuffer += data.toString();
+      
+      // Check if we have a complete line (ending with newline)
+      if (responseBuffer.includes('\n')) {
+        clearTimeout(timeout);
+        pythonProcess.stdout.removeListener('data', onData);
+        
+        try {
+          const result = responseBuffer.trim();
+          console.log('Identification result:', result);
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        }
+      }
+    };
+    
+    pythonProcess.stdout.on('data', onData);
+    
+    // Send image path to Python script
+    pythonProcess.stdin.write(imagePath + '\n');
+  });
 }
 
 // Configure multer for photo uploads
@@ -209,21 +284,36 @@ app.post('/api/user/:email/photos', upload.single('photo'), async (req, res) => 
     // Save photo to file
     await fs.writeFile(filepath, req.file.buffer);
     
-    // Update user info
-    userInfo.photos = userInfo.photos || [];
-    userInfo.photos.push({
+    // Try to identify the image
+    let identificationResult = null;
+    try {
+      if (pythonProcess) {
+        console.log('Attempting image identification for:', filepath);
+        identificationResult = await identifyImage(filepath);
+        console.log('Image identification completed:', identificationResult);
+      } else {
+        console.log('Python process not available for identification');
+      }
+    } catch (identifyError) {
+      console.error('Image identification error:', identifyError);
+      // Continue without identification result
+    }
+    
+    // Store photo info temporarily (without adding to userInfo yet)
+    const photoInfo = {
       filename: filename,
       binId: binId || null,
       timestamp: new Date().toISOString(),
-      size: req.file.size
-    });
-    
-    await saveUserInfo(email, userInfo);
+      size: req.file.size,
+      identificationResult: identificationResult
+    };
     
     res.json({ 
       success: true, 
       filename: filename,
-      photoCount: userInfo.photos.length
+      photoCount: (userInfo.photos || []).length,
+      identificationResult: identificationResult,
+      photoInfo: photoInfo
     });
   } catch (error) {
     console.error('Photo upload error:', error);
@@ -264,6 +354,61 @@ app.get('/api/user/:email/photos/:filename', async (req, res) => {
   }
 });
 
+// Confirm photo identification
+app.post('/api/user/:email/photos/:filename/confirm', async (req, res) => {
+  try {
+    const { email, filename } = req.params;
+    const { photoInfo } = req.body;
+    
+    if (!photoInfo) {
+      return res.status(400).json({ error: 'Photo info required' });
+    }
+    
+    const userInfo = await getUserInfo(email);
+    
+    // Add photo to user's photos array
+    userInfo.photos = userInfo.photos || [];
+    userInfo.photos.push({
+      filename: photoInfo.filename,
+      binId: photoInfo.binId,
+      timestamp: photoInfo.timestamp,
+      size: photoInfo.size,
+      identificationResult: photoInfo.identificationResult
+    });
+    
+    await saveUserInfo(email, userInfo);
+    
+    res.json({ 
+      success: true, 
+      photoCount: userInfo.photos.length
+    });
+  } catch (error) {
+    console.error('Confirm photo error:', error);
+    res.status(500).json({ error: 'Failed to confirm photo' });
+  }
+});
+
+// Cancel photo identification (delete photo)
+app.delete('/api/user/:email/photos/:filename/cancel', async (req, res) => {
+  try {
+    const { email, filename } = req.params;
+    const photosFolder = getPhotosFolderPath(email);
+    const filepath = path.join(photosFolder, filename);
+    
+    // Delete the photo file
+    try {
+      await fs.unlink(filepath);
+    } catch (deleteError) {
+      console.warn('Photo file may not exist:', deleteError);
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Cancel photo error:', error);
+    res.status(500).json({ error: 'Failed to cancel photo' });
+  }
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
@@ -273,6 +418,9 @@ app.get('/api/health', (req, res) => {
 async function startServer() {
   try {
     await ensureDataDir();
+    
+    // Initialize Python script
+    initPythonScript();
     
     // get the certification
     const options = {
@@ -289,5 +437,22 @@ async function startServer() {
     process.exit(1);
   }
 }
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+  console.log('Shutting down gracefully...');
+  if (pythonProcess) {
+    pythonProcess.kill();
+  }
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log('Shutting down gracefully...');
+  if (pythonProcess) {
+    pythonProcess.kill();
+  }
+  process.exit(0);
+});
 
 startServer();
