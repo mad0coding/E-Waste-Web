@@ -1,4 +1,6 @@
 
 /node_modules
 /allData
-/py_path
+/py_path/*
+!/py_path/image_identify.py
+!/py_path/image_classification.py

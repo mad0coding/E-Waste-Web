@@ -9,6 +9,8 @@
 
   Make sure Node.js and Python are installed.
 
+  Get the model from https://github.com/c-hars/IDE2025/tree/main and put it in `/py_path`
+
   Run `npm i` to install the dependencies.
 
   Run `npm run dev` to start the frontend.

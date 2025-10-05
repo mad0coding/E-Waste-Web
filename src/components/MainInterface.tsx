@@ -26,6 +26,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
     photoInfo: any;
   }>({ open: false, result: null, photoInfo: null });
   const [isConfirming, setIsConfirming] = useState(false);
+  const [mapFilterClass, setMapFilterClass] = useState<string | null>(null);
 
   // Load user data on component mount
   useEffect(() => {
@@ -126,10 +127,12 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
       await loadUserData();
       await loadPhotos();
       
-      setIdentificationPopup({ open: false, result: null, photoInfo: null });
+      // Don't close the popup here - let the IdentificationPopup component handle the flow
     } catch (error) {
       console.error('Failed to confirm photo:', error);
       toast.error('Failed to save photo');
+      // Close popup on error
+      setIdentificationPopup({ open: false, result: null, photoInfo: null });
     } finally {
       setIsConfirming(false);
     }
@@ -151,6 +154,13 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
       console.error('Failed to cancel photo:', error);
       toast.error('Failed to delete photo');
     }
+  };
+
+  const handleFindDropOff = () => {
+    // Set the filter class for the map and navigate to map view
+    setMapFilterClass(identificationPopup.result);
+    setIdentificationPopup({ open: false, result: null, photoInfo: null });
+    setCurrentView('map');
   };
 
   const formatUserName = (email: string) => {
@@ -179,7 +189,15 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
   }
 
   if (currentView === 'map') {
-    return <MapComponent onClose={() => setCurrentView('main')} />;
+    return (
+      <MapComponent 
+        onClose={() => {
+          setCurrentView('main');
+          setMapFilterClass(null); // Clear filter when closing map
+        }} 
+        filterClass={mapFilterClass}
+      />
+    );
   }
 
   if (currentView === 'search') {
@@ -342,6 +360,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
         identificationResult={identificationPopup.result}
         onConfirm={handleConfirmPhoto}
         onCancel={handleCancelPhoto}
+        onFindDropOff={handleFindDropOff}
         isLoading={isConfirming}
       />
     </div>
