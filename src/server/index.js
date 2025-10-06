@@ -391,6 +391,7 @@ app.post('/api/user/:email/photos/:filename/confirm', async (req, res) => {
 // Cancel photo identification (delete photo)
 app.delete('/api/user/:email/photos/:filename/cancel', async (req, res) => {
   try {
+    console.log("test")
     const { email, filename } = req.params;
     const photosFolder = getPhotosFolderPath(email);
     const filepath = path.join(photosFolder, filename);
@@ -406,6 +407,40 @@ app.delete('/api/user/:email/photos/:filename/cancel', async (req, res) => {
   } catch (error) {
     console.error('Cancel photo error:', error);
     res.status(500).json({ error: 'Failed to cancel photo' });
+  }
+});
+
+// clear all photos
+app.delete('/api/user/:email/photos/clear', async (req, res) => {
+  console.log("called clear photos")
+  const { email } = req.params;
+  console.log(`Clear photos requested for user: ${email}`);
+
+  try {
+    const photosFolder = getPhotosFolderPath(email);
+    console.log(`Photos folder path: ${photosFolder}`);
+
+    const userInfo = await getUserInfo(email);
+    console.log('User info loaded:', userInfo);
+
+    if (fsSync.existsSync(photosFolder)) {
+      const files = await fs.readdir(photosFolder);
+      console.log(`Found ${files.length} files to delete`);
+      for (const file of files) {
+        console.log(`Deleting file: ${file}`);
+        await fs.unlink(path.join(photosFolder, file));
+      }
+    } else {
+      console.log('Photos folder does not exist.');
+    }
+
+    userInfo.photos = [];
+    await saveUserInfo(email, userInfo);
+
+    res.json({ success: true, message: 'All photos cleared' });
+  } catch (error) {
+    console.error('Clear photos error:', error);
+    res.status(500).json({ error: 'Failed to clear photos', details: error.message });
   }
 });
 

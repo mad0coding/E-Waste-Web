@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
-import { Camera, Map, Search, User, Award, Recycle, LogOut, Image } from 'lucide-react';
+import { Camera, Map, Search, User, Award, Recycle, LogOut, Image, X } from 'lucide-react';
 import { CameraComponent } from './CameraComponent';
 import { MapComponent } from './MapComponent';
 import { SearchComponent } from './SearchComponent';
@@ -167,6 +167,28 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
     return email.split('@')[0].charAt(0).toUpperCase() + email.split('@')[0].slice(1);
   };
 
+  const handleClearPhotos = async () => {
+    try {
+      await clearPhotos(userEmail);
+      setPhotos([]);
+      toast.success('Photos cleared!');
+    } catch (error) {
+      toast.error('Failed to clear photos error code 3');
+    }
+  };
+
+  async function clearPhotos(email: string) {
+    const response = await fetch(`https://localhost:3001/api/user/${encodeURIComponent(email)}/photos/clear`, {
+    method: 'DELETE',
+  });
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('Clear photos failed:', response.status, text);
+      throw new Error(`Failed to clear photos error code 2: ${response.status} ${text}`);
+    }
+    return response.json();
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -276,6 +298,15 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
         >
           <Search className="w-6 h-6" />
           <span>Search E-Waste Info</span>
+        </Button>
+
+        {/* JS added clear button */}
+        <Button
+          onClick={handleClearPhotos}
+          className="w-full h-16 bg-orange-600 hover:bg-orange-700 flex items-center justify-center space-x-3"
+        >
+          <X className="w-6 h-6" />
+          <span>Clear Photos</span>
         </Button>
       </div>
 
