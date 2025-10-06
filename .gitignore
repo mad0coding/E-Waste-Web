@@ -4,3 +4,7 @@
 /py_path/*
 !/py_path/image_identify.py
 !/py_path/image_classification.py
+.npmignore
+src/.DS_Store
+src/components/.DS_Store
+.DS_Store
