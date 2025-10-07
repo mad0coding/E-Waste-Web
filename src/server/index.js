@@ -83,6 +83,7 @@ async function getUserInfo(email) {
       points: 0,
       scannedBins: [],
       photos: [],
+      pendingList: [],
       createdAt: new Date().toISOString(),
       lastLoginAt: new Date().toISOString()
     };
@@ -220,7 +221,8 @@ app.get('/api/user/:email', async (req, res) => {
       email: userInfo.email,
       points: userInfo.points,
       scannedBins: userInfo.scannedBins || [],
-      photoCount: (userInfo.photos || []).length
+      photoCount: (userInfo.photos || []).length,
+      pendingList: userInfo.pendingList || []
     });
   } catch (error) {
     console.error('Get user error:', error);
@@ -441,6 +443,76 @@ app.delete('/api/user/:email/photos/clear', async (req, res) => {
   } catch (error) {
     console.error('Clear photos error:', error);
     res.status(500).json({ error: 'Failed to clear photos', details: error.message });
+  }
+});
+
+// Add item to pending list
+app.post('/api/user/:email/pending-list', async (req, res) => {
+  try {
+    const { email } = req.params;
+    const { item } = req.body;
+    
+    if (!item || typeof item !== 'string') {
+      return res.status(400).json({ error: 'Valid item name required' });
+    }
+    
+    const userInfo = await getUserInfo(email);
+    userInfo.pendingList = userInfo.pendingList || [];
+    
+    // Add item if not already in list
+    if (!userInfo.pendingList.includes(item)) {
+      userInfo.pendingList.push(item);
+      await saveUserInfo(email, userInfo);
+    }
+    
+    res.json({ 
+      success: true, 
+      pendingList: userInfo.pendingList 
+    });
+  } catch (error) {
+    console.error('Add to pending list error:', error);
+    res.status(500).json({ error: 'Failed to add item to pending list' });
+  }
+});
+
+// Remove item from pending list
+app.delete('/api/user/:email/pending-list/:item', async (req, res) => {
+  try {
+    const { email, item } = req.params;
+    
+    const userInfo = await getUserInfo(email);
+    userInfo.pendingList = userInfo.pendingList || [];
+    
+    // Remove item from list
+    userInfo.pendingList = userInfo.pendingList.filter(pendingItem => pendingItem !== item);
+    await saveUserInfo(email, userInfo);
+    
+    res.json({ 
+      success: true, 
+      pendingList: userInfo.pendingList 
+    });
+  } catch (error) {
+    console.error('Remove from pending list error:', error);
+    res.status(500).json({ error: 'Failed to remove item from pending list' });
+  }
+});
+
+// Clear entire pending list
+app.delete('/api/user/:email/pending-list', async (req, res) => {
+  try {
+    const { email } = req.params;
+    
+    const userInfo = await getUserInfo(email);
+    userInfo.pendingList = [];
+    await saveUserInfo(email, userInfo);
+    
+    res.json({ 
+      success: true, 
+      pendingList: userInfo.pendingList 
+    });
+  } catch (error) {
+    console.error('Clear pending list error:', error);
+    res.status(500).json({ error: 'Failed to clear pending list' });
   }
 });
 

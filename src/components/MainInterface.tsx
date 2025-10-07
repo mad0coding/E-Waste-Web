@@ -45,6 +45,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
     try {
       const data = await apiClient.getUserData(userEmail);
       setUserData(data);
+      setPendingList(data.pendingList || []);
       setIsLoading(false);
     } catch (error) {
       console.error('Failed to load user data:', error);
@@ -158,25 +159,39 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
     }
   };
 
-  const handleAddToPending = () => {
-    // Add the e-waste class to pending list if not already there
-    if (identificationPopup.result && !pendingList.includes(identificationPopup.result)) {
-      setPendingList(prev => [...prev, identificationPopup.result as string]);
-      toast.success(`${identificationPopup.result} added to pending list`);
-    } else if (identificationPopup.result && pendingList.includes(identificationPopup.result)) {
-      toast.info(`${identificationPopup.result} is already in pending list`);
+  const handleAddToPending = async () => {
+    if (!identificationPopup.result) return;
+
+    try {
+      const response = await apiClient.addToPendingList(userEmail, identificationPopup.result);
+      if (response.success) {
+        setPendingList(response.pendingList);
+        toast.success(`${identificationPopup.result} added to pending list`);
+      }
+    } catch (error) {
+      console.error('Failed to add to pending list:', error);
+      toast.error('Failed to add item to pending list');
     }
     setIdentificationPopup({ open: false, result: null, photoInfo: null });
   };
 
-  const handleClearPendingList = () => {
-    setPendingList([]);
-    toast.success('Pending list cleared');
+  const handleClearPendingList = async () => {
+    try {
+      const response = await apiClient.clearPendingList(userEmail);
+      if (response.success) {
+        setPendingList(response.pendingList);
+        toast.success('Pending list cleared');
+      }
+    } catch (error) {
+      console.error('Failed to clear pending list:', error);
+      toast.error('Failed to clear pending list');
+    }
   };
 
   const handleFindInMap = () => {
-    // Placeholder for future functionality
-    toast.info('Find in map functionality coming soon');
+    // Navigate to map with pending list filter
+    setMapFilterClass('pending'); // Special filter mode for pending list
+    setCurrentView('map');
   };
 
   const formatUserName = (email: string) => {
@@ -235,6 +250,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
           setMapFilterClass(null); // Clear filter when closing map
         }} 
         filterClass={mapFilterClass}
+        pendingList={pendingList}
       />
     );
   }
@@ -428,6 +444,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
         onConfirm={handleConfirmPhoto}
         onCancel={handleCancelPhoto}
         onAddToPending={handleAddToPending}
+        onClose={() => setIdentificationPopup({ open: false, result: null, photoInfo: null })}
         isLoading={isConfirming}
       />
     </div>

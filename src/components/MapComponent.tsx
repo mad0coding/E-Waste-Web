@@ -3,6 +3,7 @@ import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { MapPin, Navigation, X, Clock, Phone } from 'lucide-react';
 import L from 'leaflet';
+import { LocationEvaluate, getScoreColor, getScoreDescription } from '../utils/locationEvaluate';
 
 interface EWasteBin {
   id: string;
@@ -19,6 +20,7 @@ interface EWasteBin {
 interface MapComponentProps {
   onClose: () => void;
   filterClass?: string | null; // E-waste class to filter by
+  pendingList?: string[]; // Pending e-waste list for scoring
 }
 
 // Real Melbourne e-waste collection locations
@@ -32,7 +34,7 @@ const eWasteBins: EWasteBin[] = [
     phone: '0396914500',
     lat: -37.815306,
     lng: 144.960139,
-    acceptedClasses: ['Cemera', 'Keyboard', 'Laptop', 'Mobile', 'Mouse', 'Player', 'Printer', 'Smartwatch', 'Television']
+    acceptedClasses: ['Camera', 'Keyboard', 'Laptop', 'Mobile', 'Mouse', 'Player', 'Printer', 'Smartwatch', 'Television']
   },
   {
     id: '2',
@@ -43,7 +45,7 @@ const eWasteBins: EWasteBin[] = [
     phone: '0386656400',
     lat: -37.810103,
     lng: 144.966703,
-    acceptedClasses: ['Cemera', 'Keyboard', 'Laptop', 'Mobile', 'Mouse', 'Player', 'Printer', 'Smartwatch', 'Television']
+    acceptedClasses: ['Camera', 'Keyboard', 'Laptop', 'Mobile', 'Mouse', 'Player', 'Printer', 'Smartwatch', 'Television']
   },
   {
     id: '3',
@@ -54,7 +56,7 @@ const eWasteBins: EWasteBin[] = [
     phone: '0396426100',
     lat: -37.812921,
     lng: 144.962437,
-    acceptedClasses: ['Battery', 'Cemera', 'Keyboard', 'Laptop', 'Mobile', 'Mouse', 'Player', 'Printer', 'Smartwatch', 'Television']
+    acceptedClasses: ['Battery', 'Camera', 'Keyboard', 'Laptop', 'Mobile', 'Mouse', 'Player', 'Printer', 'Smartwatch', 'Television', 'PCB']
   },
   {
     id: '4',
@@ -65,7 +67,7 @@ const eWasteBins: EWasteBin[] = [
     phone: '0399063500',
     lat: -37.810114,
     lng: 144.962476,
-    acceptedClasses: ['Battery', 'Cemera', 'Keyboard', 'Laptop', 'Mobile', 'Mouse', 'Player', 'Printer', 'Smartwatch', 'Television']
+    acceptedClasses: ['Battery', 'Camera', 'Keyboard', 'Laptop', 'Mobile', 'Mouse', 'Player', 'Printer', 'Smartwatch', 'Television', 'PCB']
   },
   {
     id: '5',
@@ -76,7 +78,7 @@ const eWasteBins: EWasteBin[] = [
     phone: '0386564200',
     lat: -37.812970,
     lng: 144.966990,
-    acceptedClasses: ['Battery', 'Cemera', 'Keyboard', 'Laptop', 'Mobile', 'Mouse', 'Player', 'Printer', 'Smartwatch', 'Television']
+    acceptedClasses: ['Battery', 'Camera', 'Keyboard', 'Laptop', 'Mobile', 'Mouse', 'Player', 'Printer', 'Smartwatch', 'Television', 'PCB']
   },
   {
     id: '6',
@@ -142,7 +144,7 @@ const eWasteBins: EWasteBin[] = [
     phone: '0483960892',
     lat: -37.810932,
     lng: 144.964597,
-    acceptedClasses: ['Battery', 'Cemera', 'Keyboard', 'Laptop', 'Microwaves', 'Mobile', 'Mouse', 'Player', 'Printer', 'Smartwatch', 'Television', 'Washing machine']
+    acceptedClasses: ['Battery', 'Camera', 'Keyboard', 'Laptop', 'Microwaves', 'Mobile', 'Mouse', 'Player', 'Printer', 'Smartwatch', 'Television', 'Washing machine']
   },
   {
     id: '12',
@@ -157,7 +159,7 @@ const eWasteBins: EWasteBin[] = [
   }
 ];
 
-export function MapComponent({ onClose, filterClass }: MapComponentProps) {
+export function MapComponent({ onClose, filterClass, pendingList = [] }: MapComponentProps) {
   const [selectedBin, setSelectedBin] = useState<EWasteBin | null>(null);
   const [userLocation, setUserLocation] = useState({ lat: -37.8136, lng: 144.9631 }); // Default to Melbourne CBD
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -284,17 +286,35 @@ export function MapComponent({ onClose, filterClass }: MapComponentProps) {
       userMarker.openPopup();
     }
 
+    // Calculate scores for pending list if applicable
+    let locationScores: { [key: string]: number } = {};
+    if (filterClass === 'pending' && pendingList && pendingList.length > 0 && userLocation) {
+      const scores = LocationEvaluate([userLocation.lat, userLocation.lng], pendingList, eWasteBins);
+      scores.forEach(score => {
+        locationScores[score.id] = score.score;
+      });
+    }
+
     // Add e-waste bin markers with filtering
     eWasteBins.forEach((bin) => {
       // Check if this bin accepts the filtered e-waste class
-      const acceptsFilteredClass = !filterClass || bin.acceptedClasses.includes(filterClass);
+      const acceptsFilteredClass = !filterClass || 
+                  filterClass === 'pending' && pendingList.every(item => bin.acceptedClasses.includes(item));
+      const acceptAll = filterClass && pendingList.every(item => bin.acceptedClasses.includes(item));
+      const acceptSome = filterClass && pendingList.some(item => bin.acceptedClasses.includes(item));
       
       // Determine color based on filter and type
       let color: string;
-      if (filterClass && acceptsFilteredClass) {
+      let scoreInfo = '';
+      if (filterClass === 'pending' && pendingList && pendingList.length > 0) {
+        // Use scoring system for pending list
+        const score = locationScores[bin.id] || 0;
+        color = getScoreColor(score);
+        scoreInfo = `<p style="margin: 4px 0; font-size: 12px; color: ${color}; font-weight: bold;">Score: ${score}/100 - ${getScoreDescription(score)}</p>`;
+      } else if (filterClass && filterClass !== 'pending' && acceptsFilteredClass) {
         // Highlight in bright green if it accepts the filtered class
         color = '#10b981'; // Bright green for matching locations
-      } else if (filterClass && !acceptsFilteredClass) {
+      } else if (filterClass && filterClass !== 'pending' && !acceptsFilteredClass) {
         // Dim/gray out if it doesn't accept the filtered class
         color = '#9ca3af'; // Gray for non-matching locations
       } else {
@@ -305,9 +325,11 @@ export function MapComponent({ onClose, filterClass }: MapComponentProps) {
       
       // Create popup content with filter information
       const filterInfo = filterClass && acceptsFilteredClass ? 
-        `<p style="margin: 4px 0; font-size: 12px; color: #10b981; font-weight: bold;">✓ Accepts ${filterClass}</p>` : 
+        `<p style="margin: 4px 0; font-size: 12px; color: #10b981; font-weight: bold;">✓ Accepts pending list</p>` : 
+        filterClass && acceptSome ? 
+        `<p style="margin: 4px 0; font-size: 12px; color: #e8c839ff; font-weight: bold;">⍻ Partially accepts pending list</p>` :
         filterClass ? 
-        `<p style="margin: 4px 0; font-size: 12px; color: #ef4444;">✗ Does not accept ${filterClass}</p>` : 
+        `<p style="margin: 4px 0; font-size: 12px; color: #ef4444;">✗ Does not accept pending list</p>` : 
         '';
 
       const marker = L.marker([bin.lat, bin.lng], { 
@@ -474,7 +496,7 @@ export function MapComponent({ onClose, filterClass }: MapComponentProps) {
                       <span 
                         key={cls} 
                         className={`text-xs px-2 py-1 rounded ${
-                          filterClass === cls 
+                          (pendingList && pendingList.includes(cls)) 
                             ? 'bg-green-100 text-green-800 border border-green-300' 
                             : 'bg-gray-100 text-gray-700'
                         }`}

@@ -10,7 +10,7 @@ interface IdentificationPopupProps {
   onConfirm: () => void;
   onCancel: () => void;
   onAddToPending: () => void;
-  onBackToMain: () => void;
+  onClose: () => void;  // Close without deleting photo
   isLoading?: boolean;
 }
 
@@ -45,7 +45,7 @@ export function IdentificationPopup({
   onConfirm, 
   onCancel,
   onAddToPending,
-  onBackToMain,
+  onClose,
   isLoading = false
 }: IdentificationPopupProps) {
   const [currentStep, setCurrentStep] = useState<PopupStep>('identification');
@@ -83,7 +83,7 @@ export function IdentificationPopup({
 
   const handleBackToMainFromInstructions = () => {
     setCurrentStep('identification');
-    onBackToMain();
+    onClose(); // Close without deleting photo
   };
 
   const handleAddToPending = () => {

@@ -5,6 +5,7 @@ export interface UserData {
   points: number;
   scannedBins: string[];
   photoCount: number;
+  pendingList: string[];
 }
 
 export interface LoginResponse {
@@ -124,6 +125,25 @@ class ApiClient {
 
   async cancelPhoto(email: string, filename: string): Promise<{ success: boolean }> {
     return this.request<{ success: boolean }>(`/user/${encodeURIComponent(email)}/photos/${filename}/cancel`, {
+      method: 'DELETE',
+    });
+  }
+
+  async addToPendingList(email: string, item: string): Promise<{ success: boolean; pendingList: string[] }> {
+    return this.request<{ success: boolean; pendingList: string[] }>(`/user/${encodeURIComponent(email)}/pending-list`, {
+      method: 'POST',
+      body: JSON.stringify({ item }),
+    });
+  }
+
+  async removeFromPendingList(email: string, item: string): Promise<{ success: boolean; pendingList: string[] }> {
+    return this.request<{ success: boolean; pendingList: string[] }>(`/user/${encodeURIComponent(email)}/pending-list/${encodeURIComponent(item)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async clearPendingList(email: string): Promise<{ success: boolean; pendingList: string[] }> {
+    return this.request<{ success: boolean; pendingList: string[] }>(`/user/${encodeURIComponent(email)}/pending-list`, {
       method: 'DELETE',
     });
   }
