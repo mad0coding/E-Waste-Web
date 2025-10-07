@@ -178,7 +178,8 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
   };
 
   async function clearPhotos(email: string) {
-    const response = await fetch(`https://localhost:3001/api/user/${encodeURIComponent(email)}/photos/clear`, {
+    const API_BASE_URL = `${window.location.origin.replace('3000','3001')}/api`;
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(email)}/photos/clear`, {
     method: 'DELETE',
   });
     if (!response.ok) {
