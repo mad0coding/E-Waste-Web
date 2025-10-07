@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
-import { Camera, Map, Search, User, Award, Recycle, LogOut, Image, X } from 'lucide-react';
+import { Camera, Map, Search, User, Award, Recycle, LogOut, Image, X, List } from 'lucide-react';
 import { CameraComponent } from './CameraComponent';
 import { MapComponent } from './MapComponent';
 import { SearchComponent } from './SearchComponent';
 import { IdentificationPopup } from './IdentificationPopup';
+import { PendingListComponent } from './PendingListComponent';
 import { toast } from "sonner@2.0.3";
 import { apiClient, UserData, PhotoInfo } from '../utils/api';
 
@@ -15,7 +16,7 @@ interface MainInterfaceProps {
 }
 
 export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
-  const [currentView, setCurrentView] = useState<'main' | 'camera' | 'map' | 'search'>('main');
+  const [currentView, setCurrentView] = useState<'main' | 'camera' | 'map' | 'search' | 'pending'>('main');
   const [userData, setUserData] = useState<UserData | null>(null);
   const [photos, setPhotos] = useState<PhotoInfo[]>([]);
   const [binId, setBinId] = useState<string>(''); // BIN ID from QR code
@@ -27,6 +28,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
   }>({ open: false, result: null, photoInfo: null });
   const [isConfirming, setIsConfirming] = useState(false);
   const [mapFilterClass, setMapFilterClass] = useState<string | null>(null);
+  const [pendingList, setPendingList] = useState<string[]>([]);
 
   // Load user data on component mount
   useEffect(() => {
@@ -156,11 +158,25 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
     }
   };
 
-  const handleFindDropOff = () => {
-    // Set the filter class for the map and navigate to map view
-    setMapFilterClass(identificationPopup.result);
+  const handleAddToPending = () => {
+    // Add the e-waste class to pending list if not already there
+    if (identificationPopup.result && !pendingList.includes(identificationPopup.result)) {
+      setPendingList(prev => [...prev, identificationPopup.result as string]);
+      toast.success(`${identificationPopup.result} added to pending list`);
+    } else if (identificationPopup.result && pendingList.includes(identificationPopup.result)) {
+      toast.info(`${identificationPopup.result} is already in pending list`);
+    }
     setIdentificationPopup({ open: false, result: null, photoInfo: null });
-    setCurrentView('map');
+  };
+
+  const handleClearPendingList = () => {
+    setPendingList([]);
+    toast.success('Pending list cleared');
+  };
+
+  const handleFindInMap = () => {
+    // Placeholder for future functionality
+    toast.info('Find in map functionality coming soon');
   };
 
   const formatUserName = (email: string) => {
@@ -225,6 +241,17 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
 
   if (currentView === 'search') {
     return <SearchComponent onClose={() => setCurrentView('main')} />;
+  }
+
+  if (currentView === 'pending') {
+    return (
+      <PendingListComponent 
+        onClose={() => setCurrentView('main')}
+        pendingList={pendingList}
+        onClearList={handleClearPendingList}
+        onFindInMap={handleFindInMap}
+      />
+    );
   }
 
   const points = userData?.points || 0;
@@ -299,6 +326,14 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
         >
           <Search className="w-6 h-6" />
           <span>Search E-Waste Info</span>
+        </Button>
+
+        <Button
+          onClick={() => setCurrentView('pending')}
+          className="w-full h-16 bg-indigo-600 hover:bg-indigo-700 flex items-center justify-center space-x-3"
+        >
+          <List className="w-6 h-6" />
+          <span>Pending List ({pendingList.length})</span>
         </Button>
 
         {/* JS added clear button */}
@@ -392,7 +427,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
         identificationResult={identificationPopup.result}
         onConfirm={handleConfirmPhoto}
         onCancel={handleCancelPhoto}
-        onFindDropOff={handleFindDropOff}
+        onAddToPending={handleAddToPending}
         isLoading={isConfirming}
       />
     </div>

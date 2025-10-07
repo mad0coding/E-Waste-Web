@@ -2,14 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Alert, AlertDescription } from './ui/alert';
-import { CheckCircle, X, AlertCircle, Recycle, MapPin } from 'lucide-react';
+import { CheckCircle, X, AlertCircle, Recycle, Plus } from 'lucide-react';
 
 interface IdentificationPopupProps {
   open: boolean;
   identificationResult: string | null;
   onConfirm: () => void;
   onCancel: () => void;
-  onFindDropOff: () => void;
+  onAddToPending: () => void;
+  onBackToMain: () => void;
   isLoading?: boolean;
 }
 
@@ -43,7 +44,8 @@ export function IdentificationPopup({
   identificationResult, 
   onConfirm, 
   onCancel,
-  onFindDropOff,
+  onAddToPending,
+  onBackToMain,
   isLoading = false
 }: IdentificationPopupProps) {
   const [currentStep, setCurrentStep] = useState<PopupStep>('identification');
@@ -79,14 +81,14 @@ export function IdentificationPopup({
     onCancel();
   };
 
-  const handleBackToMain = () => {
+  const handleBackToMainFromInstructions = () => {
     setCurrentStep('identification');
-    onCancel();
+    onBackToMain();
   };
 
-  const handleFindDropOff = () => {
+  const handleAddToPending = () => {
     setCurrentStep('identification');
-    onFindDropOff();
+    onAddToPending();
   };
 
   if (currentStep === 'identification') {
@@ -181,22 +183,22 @@ export function IdentificationPopup({
             
             <div className="border-t pt-4">
               <p className="text-sm text-muted-foreground mb-4">
-                Want to find a nearby drop-off point?
+                Want to add to the pending list?
               </p>
               
               <div className="flex gap-2">
                 <Button 
                   variant="outline" 
-                  onClick={handleBackToMain}
+                  onClick={handleBackToMainFromInstructions}
                   className="flex-1"
                 >
                   No
                 </Button>
                 <Button 
-                  onClick={handleFindDropOff}
-                  className="flex-1 bg-green-600 hover:bg-green-700 flex items-center gap-2"
+                  onClick={handleAddToPending}
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 flex items-center gap-2"
                 >
-                  <MapPin className="w-4 h-4" />
+                  <Plus className="w-4 h-4" />
                   Yes
                 </Button>
               </div>
