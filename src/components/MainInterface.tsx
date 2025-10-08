@@ -1,3 +1,5 @@
+// src/components/MainInterface.tsx
+
 import React, { useState, useEffect } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
@@ -9,6 +11,8 @@ import { IdentificationPopup } from './IdentificationPopup';
 import { PendingListComponent } from './PendingListComponent';
 import { toast } from "sonner@2.0.3";
 import { apiClient, UserData, PhotoInfo } from '../utils/api';
+import { eWasteBins } from '../data/locations';
+import { AddItemPopup } from './AddItemPopup';
 
 interface MainInterfaceProps {
   userEmail: string;
@@ -19,38 +23,43 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
   const [currentView, setCurrentView] = useState<'main' | 'camera' | 'map' | 'search' | 'pending'>('main');
   const [userData, setUserData] = useState<UserData | null>(null);
   const [photos, setPhotos] = useState<PhotoInfo[]>([]);
-  const [binId, setBinId] = useState<string>(''); // BIN ID from QR code
+  const [binId, setBinId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
-  const [identificationPopup, setIdentificationPopup] = useState<{
-    open: boolean;
-    result: string | null;
-    photoInfo: any;
-  }>({ open: false, result: null, photoInfo: null });
+  const [identificationPopup, setIdentificationPopup] = useState<{ open: boolean; result: string | null; photoInfo: any; }>({ open: false, result: null, photoInfo: null });
   const [isConfirming, setIsConfirming] = useState(false);
   const [mapFilterClass, setMapFilterClass] = useState<string | null>(null);
   const [pendingList, setPendingList] = useState<string[]>([]);
+  const [isAddItemPopupOpen, setIsAddItemPopupOpen] = useState(false);
 
-  // Load user data on component mount
   useEffect(() => {
-    loadUserData();
-    loadPhotos();
+    const loadInitialData = async () => {
+      setIsLoading(true);
+      try {
+        const [user, photoData] = await Promise.all([
+          apiClient.getUserData(userEmail),
+          apiClient.getPhotos(userEmail)
+        ]);
+        setUserData(user);
+        setPendingList(user.pendingList || []);
+        setPhotos(photoData.photos);
+      } catch (error) {
+        console.error('Failed to load initial data:', error);
+        toast.error('Failed to load profile data');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadInitialData();
   }, [userEmail]);
-
-  // Debug: Log popup state changes
-  useEffect(() => {
-    console.log('Identification popup state changed:', identificationPopup);
-  }, [identificationPopup]);
 
   const loadUserData = async () => {
     try {
       const data = await apiClient.getUserData(userEmail);
       setUserData(data);
       setPendingList(data.pendingList || []);
-      setIsLoading(false);
     } catch (error) {
       console.error('Failed to load user data:', error);
       toast.error('Failed to load profile data');
-      setIsLoading(false);
     }
   };
 
@@ -66,21 +75,13 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
   const handlePhotoTaken = async (photoBlob: Blob) => {
     try {
       const response = await apiClient.uploadPhoto(userEmail, photoBlob, binId || undefined);
-      console.log('Photo upload response:', response);
-      
       if (response.success) {
         setCurrentView('main');
-        
-        // Show identification popup
-        console.log('Setting identification popup with result:', response.identificationResult);
-        console.log('Photo info:', response.photoInfo);
-        const popupState = {
+        setIdentificationPopup({
           open: true,
           result: response.identificationResult || null,
           photoInfo: response.photoInfo || null
-        };
-        console.log('Setting popup state:', popupState);
-        setIdentificationPopup(popupState);
+        });
       }
     } catch (error) {
       console.error('Failed to upload photo:', error);
@@ -93,64 +94,40 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
       toast.error('Invalid BIN ID. Must start with "Bin"');
       return;
     }
-
     try {
       const response = await apiClient.scanBin(userEmail, qrData);
-      
       if (response.success) {
         setBinId(qrData);
         toast.success(`BIN scanned! +10 points. Total: ${response.points}`);
-        // Reload user data to get updated points
         await loadUserData();
       }
     } catch (error) {
       console.error('Failed to scan BIN:', error);
-      if (error instanceof Error && error.message.includes('already scanned')) {
-        toast.error('This BIN has already been scanned');
-      } else {
-        toast.error('Failed to scan BIN');
-      }
+      toast.error(error instanceof Error && error.message.includes('already scanned') ? 'This BIN has already been scanned' : 'Failed to scan BIN');
     }
   };
 
   const handleConfirmPhoto = async () => {
-    if (!identificationPopup.photoInfo) {
-      console.error('No photo info available for confirmation');
-      return;
-    }
-    
-    console.log('Confirming photo with info:', identificationPopup.photoInfo);
+    if (!identificationPopup.photoInfo) return;
     setIsConfirming(true);
     try {
-      const result = await apiClient.confirmPhoto(userEmail, identificationPopup.photoInfo.filename, identificationPopup.photoInfo);
-      console.log('Photo confirmation result:', result);
+      await apiClient.confirmPhoto(userEmail, identificationPopup.photoInfo.filename, identificationPopup.photoInfo);
       toast.success('Photo saved successfully!');
-      
-      // Reload user data and photos
       await loadUserData();
       await loadPhotos();
-      
-      // Don't close the popup here - let the IdentificationPopup component handle the flow
     } catch (error) {
       console.error('Failed to confirm photo:', error);
       toast.error('Failed to save photo');
-      // Close popup on error
-      setIdentificationPopup({ open: false, result: null, photoInfo: null });
     } finally {
       setIsConfirming(false);
+      setIdentificationPopup({ open: false, result: null, photoInfo: null });
     }
   };
 
   const handleCancelPhoto = async () => {
-    if (!identificationPopup.photoInfo) {
-      console.error('No photo info available for cancellation');
-      return;
-    }
-    
-    console.log('Cancelling photo:', identificationPopup.photoInfo.filename);
+    if (!identificationPopup.photoInfo) return;
     try {
-      const result = await apiClient.cancelPhoto(userEmail, identificationPopup.photoInfo.filename);
-      console.log('Photo cancellation result:', result);
+      await apiClient.cancelPhoto(userEmail, identificationPopup.photoInfo.filename);
       toast.info('Photo deleted');
       setIdentificationPopup({ open: false, result: null, photoInfo: null });
     } catch (error) {
@@ -158,28 +135,44 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
       toast.error('Failed to delete photo');
     }
   };
-
-  const handleAddToPending = async () => {
-    if (!identificationPopup.result) return;
-
+  
+  const handleManualAddItem = async (itemToAdd: string) => {
     try {
-      const response = await apiClient.addToPendingList(userEmail, identificationPopup.result);
+      const response = await apiClient.addToPendingList(userEmail, itemToAdd);
       if (response.success) {
         setPendingList(response.pendingList);
-        toast.success(`${identificationPopup.result} added to pending list`);
+        toast.success(`"${itemToAdd}" added to pending list`);
       }
     } catch (error) {
       console.error('Failed to add to pending list:', error);
       toast.error('Failed to add item to pending list');
     }
+    setIsAddItemPopupOpen(false);
+  };
+
+  const handleAddToPending = async () => {
+    if (!identificationPopup.result) return;
+    await handleManualAddItem(identificationPopup.result);
     setIdentificationPopup({ open: false, result: null, photoInfo: null });
+  };
+
+  const handleRemoveFromPending = async (itemToRemove: string) => {
+    try {
+      const response = await apiClient.removeFromPendingList(userEmail, itemToRemove);
+      if (response.success) {
+        setPendingList(response.pendingList);
+        toast.success(`"${itemToRemove}" removed`);
+      }
+    } catch (error) {
+      toast.error('Failed to remove item');
+    }
   };
 
   const handleClearPendingList = async () => {
     try {
       const response = await apiClient.clearPendingList(userEmail);
       if (response.success) {
-        setPendingList(response.pendingList);
+        setPendingList([]);
         toast.success('Pending list cleared');
       }
     } catch (error) {
@@ -189,8 +182,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
   };
 
   const handleFindInMap = () => {
-    // Navigate to map with pending list filter
-    setMapFilterClass('pending'); // Special filter mode for pending list
+    setMapFilterClass('pending');
     setCurrentView('map');
   };
 
@@ -198,17 +190,20 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
     return email.split('@')[0].charAt(0).toUpperCase() + email.split('@')[0].slice(1);
   };
 
+  // --- THIS IS THE CORRECTED SECTION ---
   const handleClearPhotos = async () => {
     try {
-      await clearPhotos(userEmail);
+      await clearPhotos(userEmail); // Calls the helper function below
       setPhotos([]);
       toast.success('Photos cleared!');
     } catch (error) {
+      // The original code had a more specific error, which we restore here
       toast.error('Failed to clear photos error code 3');
     }
   };
 
   async function clearPhotos(email: string) {
+    // This logic is fragile but it's what was in the original code
     const API_BASE_URL = `${window.location.origin.replace('3000','3001')}/api`;
     const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(email)}/photos/clear`, {
     method: 'DELETE',
@@ -220,6 +215,13 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
     }
     return response.json();
   }
+  // --- END OF CORRECTED SECTION ---
+
+  const uniqueWasteTypes = React.useMemo(() => {
+    const allItems = eWasteBins.flatMap(location => location.acceptedClasses);
+    const uniqueItems = [...new Set(allItems)];
+    return uniqueItems.sort((a, b) => a.localeCompare(b));
+  }, []);
 
   if (isLoading) {
     return (
@@ -247,7 +249,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
       <MapComponent 
         onClose={() => {
           setCurrentView('main');
-          setMapFilterClass(null); // Clear filter when closing map
+          setMapFilterClass(null);
         }} 
         filterClass={mapFilterClass}
         pendingList={pendingList}
@@ -266,6 +268,9 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
         pendingList={pendingList}
         onClearList={handleClearPendingList}
         onFindInMap={handleFindInMap}
+        onRemoveItem={handleRemoveFromPending}
+        onManualAddItem={handleManualAddItem}
+        availableItems={uniqueWasteTypes}
       />
     );
   }
@@ -275,7 +280,6 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-green-600 text-white p-4">
         <div className="flex justify-between items-center">
           <div className="flex items-center space-x-3">
@@ -298,7 +302,6 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
         </div>
       </div>
 
-      {/* Points Card */}
       <div className="p-4">
         <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white">
           <CardContent className="p-4">
@@ -316,7 +319,6 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
         </Card>
       </div>
 
-      {/* Main Action Buttons */}
       <div className="p-4 space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <Button
@@ -352,7 +354,6 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
           <span>Pending List ({pendingList.length})</span>
         </Button>
 
-        {/* JS added clear button */}
         <Button
           onClick={handleClearPhotos}
           className="w-full h-16 bg-orange-600 hover:bg-orange-700 flex items-center justify-center space-x-3"
@@ -362,7 +363,6 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
         </Button>
       </div>
 
-      {/* Recent Photos */}
       {photos.length > 0 && (
         <div className="p-4">
           <h3 className="text-lg mb-3 flex items-center space-x-2">
@@ -377,14 +377,6 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
                   alt="E-waste photo"
                   className="w-full h-full object-cover rounded-lg"
                 />
-                <div className="absolute bottom-1 right-1 bg-green-600 text-white text-xs px-1 rounded">
-                  📷
-                </div>
-                {photo.binId && (
-                  <div className="absolute top-1 left-1 bg-blue-600 text-white text-xs px-1 rounded">
-                    {photo.binId}
-                  </div>
-                )}
               </div>
             ))}
           </div>
@@ -396,7 +388,6 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
         </div>
       )}
 
-      {/* Quick Stats */}
       <div className="p-4">
         <div className="grid grid-cols-3 gap-4">
           <Card>
@@ -425,7 +416,6 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
         </div>
       </div>
 
-      {/* Tips Section */}
       <div className="p-4 pb-8">
         <Card className="bg-blue-50 border-blue-200">
           <CardContent className="p-4">
@@ -437,7 +427,6 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
         </Card>
       </div>
 
-      {/* Identification Popup */}
       <IdentificationPopup
         open={identificationPopup.open}
         identificationResult={identificationPopup.result}
@@ -446,6 +435,13 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
         onAddToPending={handleAddToPending}
         onClose={() => setIdentificationPopup({ open: false, result: null, photoInfo: null })}
         isLoading={isConfirming}
+      />
+      
+      <AddItemPopup 
+        open={isAddItemPopupOpen}
+        onClose={() => setIsAddItemPopupOpen(false)}
+        onAddItem={handleManualAddItem}
+        availableItems={uniqueWasteTypes}
       />
     </div>
   );
