@@ -9,7 +9,7 @@ from image_classification import ImageClassifier
 
 def main():
     current_dir = os.path.dirname(os.path.abspath(__file__))  # dir of this script
-    model_dir = os.path.join(current_dir, "EfficientNetV2S_100epochs_0p8dropout.keras")
+    model_dir = os.path.join(current_dir, "EfficientNetV2S_100epochs_0p8dropout_dataset2_classweighted_best_val_loss.h5")
 
     # Classifier Init
     ic = ImageClassifier(
@@ -24,7 +24,7 @@ def main():
     dummy = np.zeros((1, 384, 384, 3), dtype=np.float32)
     ic.model.predict(dummy, verbose=0) # warm-up
 
-    print("Ready!!! (Not an error!!!)", file=sys.stderr) # avoid using std in/out
+    print("(Not an error!) Ready!!!", file=sys.stderr) # avoid using std in/out
 
     while True:
         img_path = input("").strip()
@@ -33,6 +33,7 @@ def main():
         try:
             pred, conf = ic.predict_class(img_path)
             print(pred, flush=True) # flush=True to output immediately
+            print(f"(Not an error!) Confidence: {conf}", file=sys.stderr) # avoid using std in/out
             # print(f"Predicted class: {pred}, Confidence: {conf:.4f}")
         except Exception as e:
             print(f"Error: {e}")

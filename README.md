@@ -18,4 +18,7 @@
   Run `npm run server` to start the backend.
 
   Run `npm run start:all` to start the frontend and backend concurrently.
+
+  Image identification takes some time to init, 
+  it is ready after `[0] Python error: (Not an error!!!) Ready!!!` is displayed on the terminal.
   
