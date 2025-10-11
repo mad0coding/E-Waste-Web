@@ -72,22 +72,30 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
     }
   };
 
+  // --- THIS FUNCTION HAS BEEN CORRECTED ---
   const handlePhotoTaken = async (photoBlob: Blob) => {
+    setCurrentView('main'); // Close the camera immediately for a better user experience
     try {
       const response = await apiClient.uploadPhoto(userEmail, photoBlob, binId || undefined);
+      
       if (response.success) {
-        setCurrentView('main');
+        // Now show the identification popup
         setIdentificationPopup({
           open: true,
           result: response.identificationResult || null,
           photoInfo: response.photoInfo || null
         });
+      } else {
+        // If the API reports a failure, show a toast
+        toast.error(response.message || 'Photo upload failed');
       }
     } catch (error) {
       console.error('Failed to upload photo:', error);
       toast.error('Failed to save photo');
+      setCurrentView('main'); // Ensure camera is closed even on critical error
     }
   };
+  // --- END OF CORRECTED SECTION ---
 
   const handleQRScanned = async (qrData: string) => {
     if (!qrData.startsWith('Bin')) {
@@ -106,7 +114,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
       toast.error(error instanceof Error && error.message.includes('already scanned') ? 'This BIN has already been scanned' : 'Failed to scan BIN');
     }
   };
-
+  
   const handleConfirmPhoto = async () => {
     if (!identificationPopup.photoInfo) return;
     setIsConfirming(true);
@@ -120,7 +128,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
       toast.error('Failed to save photo');
     } finally {
       setIsConfirming(false);
-      setIdentificationPopup({ open: false, result: null, photoInfo: null });
+      // Let user decide next action, don't close popup automatically
     }
   };
 
@@ -152,7 +160,16 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
 
   const handleAddToPending = async () => {
     if (!identificationPopup.result) return;
-    await handleManualAddItem(identificationPopup.result);
+    try {
+      const response = await apiClient.addToPendingList(userEmail, identificationPopup.result);
+      if (response.success) {
+        setPendingList(response.pendingList);
+        toast.success(`${identificationPopup.result} added to pending list`);
+      }
+    } catch (error) {
+      console.error('Failed to add to pending list:', error);
+      toast.error('Failed to add item to pending list');
+    }
     setIdentificationPopup({ open: false, result: null, photoInfo: null });
   };
 
@@ -190,24 +207,21 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
     return email.split('@')[0].charAt(0).toUpperCase() + email.split('@')[0].slice(1);
   };
 
-  // --- THIS IS THE CORRECTED SECTION ---
   const handleClearPhotos = async () => {
     try {
-      await clearPhotos(userEmail); // Calls the helper function below
+      await clearPhotos(userEmail);
       setPhotos([]);
       toast.success('Photos cleared!');
     } catch (error) {
-      // The original code had a more specific error, which we restore here
       toast.error('Failed to clear photos error code 3');
     }
   };
 
   async function clearPhotos(email: string) {
-    // This logic is fragile but it's what was in the original code
     const API_BASE_URL = `${window.location.origin.replace('3000','3001')}/api`;
     const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(email)}/photos/clear`, {
-    method: 'DELETE',
-  });
+      method: 'DELETE',
+    });
     if (!response.ok) {
       const text = await response.text();
       console.error('Clear photos failed:', response.status, text);
@@ -215,7 +229,6 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
     }
     return response.json();
   }
-  // --- END OF CORRECTED SECTION ---
 
   const uniqueWasteTypes = React.useMemo(() => {
     const allItems = eWasteBins.flatMap(location => location.acceptedClasses);
