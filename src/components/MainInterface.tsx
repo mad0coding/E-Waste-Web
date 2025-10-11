@@ -72,22 +72,38 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
     }
   };
 
+  // --- THIS FUNCTION HAS BEEN CORRECTED ---
   const handlePhotoTaken = async (photoBlob: Blob) => {
+    setCurrentView('main'); // Close the camera immediately for a better user experience
     try {
       const response = await apiClient.uploadPhoto(userEmail, photoBlob, binId || undefined);
+<<<<<<< Updated upstream
       if (response.success) {
         setCurrentView('main');
+=======
+      
+      if (response.success) {
+        // Now show the identification popup
+>>>>>>> Stashed changes
         setIdentificationPopup({
           open: true,
           result: response.identificationResult || null,
           photoInfo: response.photoInfo || null
         });
+<<<<<<< Updated upstream
+=======
+      } else {
+        // If the API reports a failure, show a toast
+        toast.error(response.message || 'Photo upload failed');
+>>>>>>> Stashed changes
       }
     } catch (error) {
       console.error('Failed to upload photo:', error);
       toast.error('Failed to save photo');
+      setCurrentView('main'); // Ensure camera is closed even on critical error
     }
   };
+  // --- END OF CORRECTED SECTION ---
 
   const handleQRScanned = async (qrData: string) => {
     if (!qrData.startsWith('Bin')) {
@@ -106,7 +122,7 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
       toast.error(error instanceof Error && error.message.includes('already scanned') ? 'This BIN has already been scanned' : 'Failed to scan BIN');
     }
   };
-
+  
   const handleConfirmPhoto = async () => {
     if (!identificationPopup.photoInfo) return;
     setIsConfirming(true);
@@ -120,7 +136,11 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
       toast.error('Failed to save photo');
     } finally {
       setIsConfirming(false);
+<<<<<<< Updated upstream
       setIdentificationPopup({ open: false, result: null, photoInfo: null });
+=======
+      // Let user decide next action, don't close popup automatically
+>>>>>>> Stashed changes
     }
   };
 
@@ -137,6 +157,24 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
   };
   
   const handleManualAddItem = async (itemToAdd: string) => {
+<<<<<<< Updated upstream
+=======
+    try {
+      const response = await apiClient.addToPendingList(userEmail, itemToAdd);
+      if (response.success) {
+        setPendingList(response.pendingList);
+        toast.success(`"${itemToAdd}" added to pending list`);
+      }
+    } catch (error) {
+      console.error('Failed to add to pending list:', error);
+      toast.error('Failed to add item to pending list');
+    }
+    setIsAddItemPopupOpen(false);
+  };
+
+  const handleAddToPending = async () => {
+    if (!identificationPopup.result) return;
+>>>>>>> Stashed changes
     try {
       const response = await apiClient.addToPendingList(userEmail, itemToAdd);
       if (response.success) {
@@ -206,8 +244,8 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
     // This logic is fragile but it's what was in the original code
     const API_BASE_URL = `${window.location.origin.replace('3000','3001')}/api`;
     const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(email)}/photos/clear`, {
-    method: 'DELETE',
-  });
+      method: 'DELETE',
+    });
     if (!response.ok) {
       const text = await response.text();
       console.error('Clear photos failed:', response.status, text);
@@ -216,6 +254,12 @@ export function MainInterface({ userEmail, onLogout }: MainInterfaceProps) {
     return response.json();
   }
   // --- END OF CORRECTED SECTION ---
+
+  const uniqueWasteTypes = React.useMemo(() => {
+    const allItems = eWasteBins.flatMap(location => location.acceptedClasses);
+    const uniqueItems = [...new Set(allItems)];
+    return uniqueItems.sort((a, b) => a.localeCompare(b));
+  }, []);
 
   const uniqueWasteTypes = React.useMemo(() => {
     const allItems = eWasteBins.flatMap(location => location.acceptedClasses);
